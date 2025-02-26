@@ -31,29 +31,52 @@ modelo = carregar_modelo() #recebe a info da funçaõ criada
 
 st.title("Previsão de preço de imóveis")
 
-#criar caixas de input para cada uma das 13 features que o modelo precisa receber
-#variaveis com mesmo nome que as features do modelo para o dict/df que iremos gerar tenha os nomes iguais
-longitude = st.number_input("Longitude", value=-122.00)#cria caixa de input de número com padrão 122 e nome Longitude
-latitude = st.number_input("Latitude", value=37.00)#cria caixa de input de número com padrão 122 e nome Latitude
+# Para simplificar a interface, ao invés de pedir lat e long pediremos o condado, 
+# e puxaremos a mediana a partir do geodataframe
+# Criamos uma lista com os nomes dos condados, ordenados alfabeticamente.
+# Isso será usado para exibir opções no select box do Streamlit.
+condados = list(gdf_geo["name"].sort_values())
 
-housing_median_age = st.number_input("Idade do Imóvel", value=10)
+# Criamos um seletor no Streamlit onde o usuário pode escolher um condado da lista.
+selecionar_condado = st.selectbox("Condado", condados)
 
-total_rooms = st.number_input("Total de cômodos", value=800)
-total_bedrooms = st.number_input("Total de quartos", value=100)
-population = st.number_input("População", value=300)
-households = st.number_input("Domicílios", value=100)
+# Usamos `query()` para filtrar o DataFrame e obter a longitude mediana do condado selecionado.
+# O `@` antes da variável indica que estamos referenciando uma variável Python dentro da string do `query()`.
+longitude = gdf_geo.query("name == @selecionar_condado")["longitude"].values
 
-#cria slider com input de renda com mínimo 0.5, maximos 15, valor base 4.5 e passos/steps 0.5
-median_income = st.slider("Renda média(múltiplos de US$10k)", 0.5, 15.0, 4.5, 0.5)
+# Fazemos o mesmo para a latitude mediana do condado selecionado.
+latitude = gdf_geo.query("name == @selecionar_condado")["latitude"].values
 
-#cria caixa de seleção de proximidade que puxa opções únicas da feature do df
-ocean_proximity = st.selectbox("Proximidade do oceano", df["ocean_proximity"].unique())
 
-median_income_cat = st.number_input("Categoria de renda", value=4)
+#minimo e máximo de acordo com os dados
+housing_median_age = st.number_input("Idade do Imóvel", value=10, min_value=1, max_value=50)
 
-rooms_per_household = st.number_input("Cômodos por domicilio", value=7)
-bedrooms_per_rooms = st.number_input("Razão de quartos por cômodo", value=0.2)
-population_per_household = st.number_input("Pessoas por domicilio", value=2)
+# dados usados são a mediana que tem por condado no geodataframe já que são não intuitivos para quem usa
+total_rooms = gdf_geo.query("name == @selecionar_condado")["total_rooms"].values
+total_bedrooms = gdf_geo.query("name == @selecionar_condado")["total_bedrooms"].values
+population = gdf_geo.query("name == @selecionar_condado")["population"].values
+households = gdf_geo.query("name == @selecionar_condado")["households"].values
+
+# para ficar mais amigável pedimos valor em milhares, 
+# que depois dividiremos por 10 para ficar na mesma unidade que o modelo
+# cria slider com input de renda com mínimo 5, maximos 150, valor base 4.5 e passos/steps 5
+# não premite misturar float com inteiro
+median_income = st.slider("Renda média(milhares de US$)", 5.0, 150.0, 45.0, 5.0)
+
+#pegamos do geodf a ocean proximity, que foi criada usando a moda para as casas do condado
+ocean_proximity = gdf_geo.query("name == @selecionar_condado")["ocean_proximity"].values
+
+#os bins que usamos no cut para criar as cat no df original
+bins_income = [0, 1.5, 3, 4.5, 6, np.inf]
+#o np.digitize pega os dados, os bins, e retorna em qual cat os dados se encontram seguindo a ordem dos bins
+# /10 pois para ficar mais amigável mudamos o pedido de renda para k, mas nos dados está em 10k
+median_income_cat = np.digitize(median_income /10, bins=bins_income)
+
+#pegamos do geodf a ocean proximity, que foi criada usando a mediana para as casas do condado
+rooms_per_household = gdf_geo.query("name == @selecionar_condado")["rooms_per_household"].values
+bedrooms_per_rooms = gdf_geo.query("name == @selecionar_condado")["bedrooms_per_rooms"].values
+population_per_household = gdf_geo.query("name == @selecionar_condado")["population_per_household"].values
+
 
 #variável que recebe os dados do input em forma de dict para dps virar df
 #nomes das features igual ao nome das features do modelo
@@ -65,7 +88,7 @@ entrada_modelo = {
     "total_bedrooms": total_bedrooms,
     "population": population,
     "households": households,
-    "median_income": median_income,
+    "median_income": median_income / 10,
     "ocean_proximity": ocean_proximity,
     "median_income_cat": median_income_cat,
     "rooms_per_household": rooms_per_household,
