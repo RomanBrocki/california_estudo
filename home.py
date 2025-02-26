@@ -59,9 +59,10 @@ households = gdf_geo.query("name == @selecionar_condado")["households"].values
 
 # para ficar mais amigável pedimos valor em milhares, 
 # que depois dividiremos por 10 para ficar na mesma unidade que o modelo
-# cria slider com input de renda com mínimo 5, maximos 150, valor base 4.5 e passos/steps 5
-# não premite misturar float com inteiro
-median_income = st.slider("Renda média(milhares de US$)", 5.0, 150.0, 45.0, 5.0)
+# cria slider com input de renda com mínimo 5, maximos 100, valor base 4.5 e passos/steps 5
+# (conforme min e max dos dados limpos)
+# não permite misturar float com inteiro
+median_income = st.slider("Renda média(milhares de US$)", 5.0, 100.0, 45.0, 5.0)
 
 #pegamos do geodf a ocean proximity, que foi criada usando a moda para as casas do condado
 ocean_proximity = gdf_geo.query("name == @selecionar_condado")["ocean_proximity"].values
