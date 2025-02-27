@@ -1,17 +1,16 @@
-import geopandas as pd
-import numpy as np
-import pandas as pd
-import streamlit as st #streamlit é a ferramenta que faz o site interativo para o modelo
+import geopandas as gpd  # Biblioteca para manipulação de dados espaciais
+import numpy as np  # Biblioteca para operações numéricas
+import pandas as pd  # Biblioteca para manipulação de dados tabulares
+import pydeck as pdk  # Biblioteca de visualização de mapas interativos usada no Streamlit
+import streamlit as st  # Biblioteca para criar interfaces web interativas
 
-from joblib import load
+from joblib import load  # Para carregar modelos previamente treinados
 
 from notebooks.src.config import DADOS_LIMPOS, DADOS_GEO_MEDIAN, MODELO_FINAL
 
-#@ simboliza uma função que atua sobre outra
-# streamlit roda automatiamente tudo a cada alteração, o que pode demorar dependendo dos dados e funções
-# Persistência de memória é usar um mecanismo que guarde info de modo não rerordar sempre
-# .cache_x é função do streamlit que joga a função abaixo dela no cache (decorador)
-@st.cache_data #guarda a função abaixo no cache de dados
+# Decorador @st.cache_data permite armazenar os resultados da função em cache.
+# Isso evita a necessidade de recarregar os dados sempre que a página for atualizada.
+@st.cache_data
 def carregar_dados_limpos():
     return pd.read_parquet(DADOS_LIMPOS)
 
@@ -19,94 +18,112 @@ def carregar_dados_limpos():
 def carregar_dados_geo():
     return pd.read_parquet(DADOS_GEO_MEDIAN)
 
-@st.cache_resource #guarda a função abaixo no cache de recursos
+# @st.cache_resource faz cache do modelo carregado, evitando que ele seja recarregado sempre.
+@st.cache_resource
 def carregar_modelo():
     return load(MODELO_FINAL)
 
+# Carrega os dados e o modelo uma única vez e os mantém em cache.
+df = carregar_dados_limpos()
+gdf_geo = carregar_dados_geo()
+modelo = carregar_modelo()
 
-df = carregar_dados_limpos() #recebe a info da funçaõ criada
-gdf_geo = carregar_dados_geo() #recebe a info da funçaõ criada
-modelo = carregar_modelo() #recebe a info da funçaõ criada
-
-
+# Define o título da interface
 st.title("Previsão de preço de imóveis")
 
-# Para simplificar a interface, ao invés de pedir lat e long pediremos o condado, 
-# e puxaremos a mediana a partir do geodataframe
 # Criamos uma lista com os nomes dos condados, ordenados alfabeticamente.
-# Isso será usado para exibir opções no select box do Streamlit.
+# Essa lista será usada como opções para seleção do usuário.
 condados = list(gdf_geo["name"].sort_values())
 
-# Criamos um seletor no Streamlit onde o usuário pode escolher um condado da lista.
-selecionar_condado = st.selectbox("Condado", condados)
+# Criamos um layout de duas colunas para separar os inputs e o mapa
+coluna1, coluna2 = st.columns(2)
 
-# Usamos `query()` para filtrar o DataFrame e obter a longitude mediana do condado selecionado.
-# O `@` antes da variável indica que estamos referenciando uma variável Python dentro da string do `query()`.
-longitude = gdf_geo.query("name == @selecionar_condado")["longitude"].values
+# with é designador de contexto
+# Seção de entrada de dados pelo usuário
+with coluna1:
+    # Seletor para o usuário escolher um condado
+    selecionar_condado = st.selectbox("Condado", condados)
 
-# Fazemos o mesmo para a latitude mediana do condado selecionado.
-latitude = gdf_geo.query("name == @selecionar_condado")["latitude"].values
+    # Pegamos as coordenadas medianas do condado selecionado no geodataframe.
+    # O `@` antes da variável indica que estamos referenciando uma variável Python dentro da string do `query()`.
+    longitude = gdf_geo.query("name == @selecionar_condado")["longitude"].values
+    latitude = gdf_geo.query("name == @selecionar_condado")["latitude"].values
 
+    # Campo de entrada para idade do imóvel (slider numérico)
+    housing_median_age = st.number_input("Idade do Imóvel", value=10, min_value=1, max_value=50)
 
-#minimo e máximo de acordo com os dados
-housing_median_age = st.number_input("Idade do Imóvel", value=10, min_value=1, max_value=50)
+    # Obtendo os valores médios de atributos relevantes do condado selecionado
+    total_rooms = gdf_geo.query("name == @selecionar_condado")["total_rooms"].values
+    total_bedrooms = gdf_geo.query("name == @selecionar_condado")["total_bedrooms"].values
+    population = gdf_geo.query("name == @selecionar_condado")["population"].values
+    households = gdf_geo.query("name == @selecionar_condado")["households"].values
 
-# dados usados são a mediana que tem por condado no geodataframe já que são não intuitivos para quem usa
-total_rooms = gdf_geo.query("name == @selecionar_condado")["total_rooms"].values
-total_bedrooms = gdf_geo.query("name == @selecionar_condado")["total_bedrooms"].values
-population = gdf_geo.query("name == @selecionar_condado")["population"].values
-households = gdf_geo.query("name == @selecionar_condado")["households"].values
+    # Slider para a renda média (valor ajustado para milhares de dólares)
+    median_income = st.slider("Renda média (milhares de US$)", 5.0, 100.0, 45.0, 5.0)
 
-# para ficar mais amigável pedimos valor em milhares, 
-# que depois dividiremos por 10 para ficar na mesma unidade que o modelo
-# cria slider com input de renda com mínimo 5, maximos 100, valor base 4.5 e passos/steps 5
-# (conforme min e max dos dados limpos)
-# não permite misturar float com inteiro
-median_income = st.slider("Renda média(milhares de US$)", 5.0, 100.0, 45.0, 5.0)
+    # Pegamos a variável categórica `ocean_proximity`, definida pela moda dos registros do condado
+    ocean_proximity = gdf_geo.query("name == @selecionar_condado")["ocean_proximity"].values
 
-#pegamos do geodf a ocean proximity, que foi criada usando a moda para as casas do condado
-ocean_proximity = gdf_geo.query("name == @selecionar_condado")["ocean_proximity"].values
+    # Criamos os bins usados para categorizar a renda
+    bins_income = [0, 1.5, 3, 4.5, 6, np.inf]
 
-#os bins que usamos no cut para criar as cat no df original
-bins_income = [0, 1.5, 3, 4.5, 6, np.inf]
-#o np.digitize pega os dados, os bins, e retorna em qual cat os dados se encontram seguindo a ordem dos bins
-# /10 pois para ficar mais amigável mudamos o pedido de renda para k, mas nos dados está em 10k
-median_income_cat = np.digitize(median_income /10, bins=bins_income)
+    # np.digitize classifica o valor da renda em uma das categorias definidas pelos bins.
+    # Como alteramos a escala da renda no input (de 10k para 1k), precisamos dividir por 10 antes da classificação.
+    median_income_cat = np.digitize(median_income / 10, bins=bins_income)
 
-#pegamos do geodf a ocean proximity, que foi criada usando a mediana para as casas do condado
-rooms_per_household = gdf_geo.query("name == @selecionar_condado")["rooms_per_household"].values
-bedrooms_per_rooms = gdf_geo.query("name == @selecionar_condado")["bedrooms_per_rooms"].values
-population_per_household = gdf_geo.query("name == @selecionar_condado")["population_per_household"].values
+    # Obtendo outras métricas relacionadas à densidade habitacional do condado selecionado
+    rooms_per_household = gdf_geo.query("name == @selecionar_condado")["rooms_per_household"].values
+    bedrooms_per_rooms = gdf_geo.query("name == @selecionar_condado")["bedrooms_per_rooms"].values
+    population_per_household = gdf_geo.query("name == @selecionar_condado")["population_per_household"].values
 
+    # Criamos um dicionário com as entradas do usuário para transformar em DataFrame
+    entrada_modelo = {
+        "longitude": longitude,
+        "latitude": latitude,
+        "housing_median_age": housing_median_age,
+        "total_rooms": total_rooms,
+        "total_bedrooms": total_bedrooms,
+        "population": population,
+        "households": households,
+        "median_income": median_income / 10,
+        "ocean_proximity": ocean_proximity,
+        "median_income_cat": median_income_cat,
+        "rooms_per_household": rooms_per_household,
+        "bedrooms_per_rooms": bedrooms_per_rooms,
+        "population_per_household": population_per_household,
+    }
 
-#variável que recebe os dados do input em forma de dict para dps virar df
-#nomes das features igual ao nome das features do modelo
-entrada_modelo = {
-    "longitude": longitude,
-    "latitude": latitude,
-    "housing_median_age": housing_median_age,
-    "total_rooms": total_rooms,
-    "total_bedrooms": total_bedrooms,
-    "population": population,
-    "households": households,
-    "median_income": median_income / 10,
-    "ocean_proximity": ocean_proximity,
-    "median_income_cat": median_income_cat,
-    "rooms_per_household": rooms_per_household,
-    "bedrooms_per_rooms": bedrooms_per_rooms,
-    "population_per_household": population_per_household,
-}
-#gerando df a partir do dict gerado com os inputs
-df_entrada_modelo = pd.DataFrame(entrada_modelo, index=[0]) #precisa de índice para o streamlit usar
+    # Transformamos o dicionário em DataFrame (precisa de um índice para ser aceito pelo modelo)
+    df_entrada_modelo = pd.DataFrame(entrada_modelo, index=[0])
 
-#botão para gerar previsão. É true se clicado
-botao_previsao = st.button("Prever preço")
+    # Criamos um botão que, ao ser pressionado, gera a previsão do preço do imóvel
+    botao_previsao = st.button("Prever preço")
 
-#se o botão for true gera a previsão, ou seja, se clicar. Gera abaixo do botão em forma de array de arrays
-if botao_previsao:
-    preco = modelo.predict(df_entrada_modelo)#gera previsão
-    #passa para o corpo do botão. Formatamos para extrair do array de arrays
-    st.write(f"Preço previsto: US$ {preco[0][0]:.2f}")
+    # Se o botão for pressionado, realizamos a previsão com o modelo carregado
+    if botao_previsao:
+        preco = modelo.predict(df_entrada_modelo)
+        st.write(f"Preço previsto: US$ {preco[0][0]:.2f}")
 
+# Seção de exibição do mapa
+with coluna2:
+    # Criamos um estado inicial para o mapa
+    view_state = pdk.ViewState(
+        #Se passarmos as variaveis de lat e long direto dá erro pois é array e está em otimização de float.
+        #para acertar selecionamos o item do array de 1(0) e convertemos para float não otimizado com float()
+        latitude=float(latitude[0]),  # Posição inicial do mapa (latitude)
+        longitude=float(longitude[0]),  # Posição inicial do mapa (longitude)
+        zoom=5,  # Nível inicial de zoom
+        min_zoom=4,  # Nível mínimo de zoom permitido
+        max_zoom=8,  # Nível máximo de zoom permitido
+    )
+
+    # Criamos o mapa interativo com as configurações iniciais
+    mapa = pdk.Deck(
+        initial_view_state=view_state,  # Usa as coordenadas e zoom definidos acima
+        map_style="light",  # Define o estilo visual do mapa
+    )
+
+    # Exibimos o mapa dentro do Streamlit
+    st.pydeck_chart(mapa)
 
 
