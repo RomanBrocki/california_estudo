@@ -80,7 +80,8 @@ coluna1, coluna2 = st.columns(2)
 # with é designador de contexto
 # Seção de entrada de dados pelo usuário
 with coluna1:
-    with st.form(key="formulario"):
+    #O st.form associa um grupo de cod à um botão de submeter. Assim só permite rodar quando clica
+    with st.form(key="formulario"):#precisa de nome para designação. Não aparece
         # Seletor para o usuário escolher um condado
         selecionar_condado = st.selectbox("Condado", condados)
 
@@ -139,11 +140,13 @@ with coluna1:
         df_entrada_modelo = pd.DataFrame(entrada_modelo)
 
         # Criamos um botão que, ao ser pressionado, gera a previsão do preço do imóvel
+        # dentro do st.form o botão tem que ser form_submit
         botao_previsao = st.form_submit_button("Prever preço")
 
         # Se o botão for pressionado, realizamos a previsão com o modelo carregado
     if botao_previsao:
         preco = modelo.predict(df_entrada_modelo)
+        # metric permite configurar melhor fonte. precisa de rotulo e valor
         st.metric(label="Preço previsto: (US$)", value=f"{preco[0][0]:.2f}")
 
 # Seção de exibição do mapa
@@ -167,8 +170,8 @@ with coluna2:
         get_fill_color=[0, 0, 255, 100],#cor de preenchimento do poligono destacado. Lista rgb + transparência
         get_line_color=[255,255,255],#cor da linha que separa o poligono(condado) selecionado
         get_line_width=50, #espessura da linha de divisa do poligono(condado)
-        pickable=True,
-        auto_highlight=True,
+        pickable=True,#permite que tooltip criado e ativado retorne dados
+        auto_highlight=True,#gera leve destaque
     )
 
     condado_selecionado = gdf_geo.query("name == @selecionar_condado")
@@ -180,12 +183,13 @@ with coluna2:
         get_fill_color=[255, 0, 0, 100],#cor de preenchimento do poligono destacado. Lista rgb + transparência
         get_line_color=[0, 0, 0],#cor da linha que separa o poligono(condado) selecionado
         get_line_width=500, #espessura da linha de divisa do poligono(condado)
-        pickable=True,
-        auto_highlight=True,
+        pickable=True, #permite que tooltip criado e ativado retorne dados
+        auto_highlight=True,#gera leve destaque
     )
+    #criando a tooltip que gera etiqueta de nome do condado abaixo do mouse
     tooltip = {
-        "html": "<b>Condado:</b> {name}",
-        "style": {"backgroundColor": "steelblue", "color": "white", "fontsize": "10px"},
+        "html": "<b>Condado:</b> {name}",#Coloca Condado: var nome
+        "style": {"backgroundColor": "steelblue", "color": "white", "fontsize": "10px"}, #estilo de cor
     }
 
     # Criamos o mapa interativo com as configurações iniciais
@@ -193,7 +197,7 @@ with coluna2:
         initial_view_state=view_state,  # Usa as coordenadas e zoom definidos acima
         map_style="light",  # Define o estilo visual do mapa
         layers=[polygon_layer, highlight_layer], #lista das camadas a serem usadas
-        tooltip=tooltip,
+        tooltip=tooltip,#ativa o tooltip. Precisa de pickable True em cada camada para funcionar
     )
 
     # Exibimos o mapa dentro do Streamlit
